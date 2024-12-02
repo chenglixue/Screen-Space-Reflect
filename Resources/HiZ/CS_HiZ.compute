@@ -1,0 +1,44 @@
+#pragma once
+#include "Assets/Resources/Library/Common.hlsl"
+
+#pragma kernel GetHiZ
+
+Texture2D<float>   _SourceTex;
+RWTexture2D<float4> _RW_OutputTex;
+
+// xy: last mipmap's texel size;
+// zw: curr mipmap's texel size
+float4 _HiZTexSize;
+
+void GetMinDepth3x3(Texture2D<float> depthTex, float2 uv, float2 duv,
+    out float minDepth)
+{
+    float du = duv.x;
+    float dv = duv.y;
+
+    const float2 offsetUV[9] =
+    {
+        {-du, dv}, {0, dv}, {du, dv},
+        {-du, 0}, {0, 0}, {du, 0},
+        {-du, -dv}, {0, -dv}, {du, -dv}
+    };
+
+    minDepth = 0;
+    [unroll(9)]
+    for(int i = 0; i < 9; ++i)
+    {
+        float depth = depthTex.SampleLevel(Smp_ClampU_ClampV_Linear, uv + offsetUV[i], 0);
+        minDepth = max(minDepth, depth);
+    }
+}
+
+[numthreads(8,8,1)]
+void GetHiZ (uint3 id : SV_DispatchThreadID)
+{
+    float2 uv = (float2(id.xy) + 0.5f) * _HiZTexSize.zw;
+
+    float minDepth = 0;
+    GetMinDepth3x3(_SourceTex, uv, _HiZTexSize.xy, minDepth);
+
+    _RW_OutputTex[id.xy] = minDepth;
+}
